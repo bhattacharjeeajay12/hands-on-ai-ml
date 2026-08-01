@@ -1,5 +1,47 @@
+import re
 import string
 from collections import defaultdict
+
+import requests
+
+
+def fetch_wikipedia_text(title: str, lang: str = "en") -> str:
+    """
+    Download the plain-text extract of a Wikipedia article.
+
+    Example: fetch_wikipedia_text("Byte-pair encoding") -> the article's
+    plain text (infoboxes/markup stripped, references left as bracketed
+    numbers in the API's plaintext extract).
+    """
+    url = f"https://{lang}.wikipedia.org/w/api.php"
+    params = {
+        "action": "query",
+        "titles": title,
+        "prop": "extracts",
+        "explaintext": True,
+        "format": "json",
+    }
+    response = requests.get(url, params=params, timeout=10)
+    response.raise_for_status()
+    pages = response.json()["query"]["pages"]
+    page = next(iter(pages.values()))
+    if "extract" not in page:
+        raise ValueError(f"No article found for title: {title!r}")
+    return page["extract"]
+
+
+def text_to_word_freqs(text: str) -> dict[str, int]:
+    """
+    Turn raw article text into a word -> frequency dict, ready to hand
+    to BPE.train(). Lowercases and keeps only alphabetic words (drops
+    numbers/punctuation), same shape as the toy corpora used earlier:
+        {"low": 5, "lower": 2, ...}
+    """
+    words = re.findall(r"[a-zA-Z']+", text.lower())
+    word_freqs: dict[str, int] = {}
+    for word in words:
+        word_freqs[word] = word_freqs.get(word, 0) + 1
+    return word_freqs
 
 class BPE:
     def __init__(self):
@@ -166,4 +208,21 @@ if __name__ == "__main__":
     tokens = bpe.apply("lowest")
     print("apply('lowest'):", tokens)
     # expected: ["low", "est</w>"]
+
+    # --- train BPE on a real Wikipedia page ---
+    page_title = "Byte-pair encoding"
+    print(f"\nFetching Wikipedia page: {page_title!r} ...")
+    wiki_text = fetch_wikipedia_text(page_title)
+    print(f"Fetched {len(wiki_text)} characters")
+
+    wiki_word_freqs = text_to_word_freqs(wiki_text)
+    print(f"Unique words: {len(wiki_word_freqs)}")
+
+    wiki_bpe = BPE()
+    wiki_merges, wiki_vocab = wiki_bpe.train(wiki_word_freqs, num_merges=200)
+    print(f"Learned {len(wiki_merges)} merges -> vocab size {len(wiki_vocab)}")
+    print("First 10 merges:", wiki_merges[:10])
+
+    for sample_word in ["tokenization", "encoding", "algorithm"]:
+        print(f"apply({sample_word!r}):", wiki_bpe.apply(sample_word))
 
