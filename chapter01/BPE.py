@@ -21,7 +21,12 @@ def fetch_wikipedia_text(title: str, lang: str = "en") -> str:
         "explaintext": True,
         "format": "json",
     }
-    response = requests.get(url, params=params, timeout=10)
+    # Wikipedia's API rejects requests with no/generic User-Agent (403),
+    # per its API etiquette policy: https://meta.wikimedia.org/wiki/User-Agent_policy
+    headers = {
+        "User-Agent": "BPE-learning-script/1.0 (educational use; contact: example@example.com)"
+    }
+    response = requests.get(url, params=params, headers=headers, timeout=10)
     response.raise_for_status()
     pages = response.json()["query"]["pages"]
     page = next(iter(pages.values()))
